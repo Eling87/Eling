@@ -1,0 +1,159 @@
+---
+title: "Untitled"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r}
+##
+## initialization
+initial<-function(K_for_col,G_for_row,seed){
+  K=K_for_col
+  G=G_for_row
+  set.seed(seed)
+  number_seq= runif( K*G, min=0.1, max = 1) #uniform distribution numbers for matrix
+  Z = matrix(data=number_seq , nrow=G, ncol = K, byrow = TRUE)
+  set.seed(seed)
+  betas = runif( K, min=0.1, max = 1)#construct a vector of beta
+  values_initalized=list(Z,betas)
+  return(values_initalized)
+}
+
+## averge_tpm_matrix
+average_tpm_ctype<-function(reference,count_matrirx){
+
+  ctype = as.numeric(reference@cell_types)
+  k_types=length(as.numeric(levels(reference@cell_types)))
+  mu = matrix(0, nrow=nrow(count_matrirx), ncol=k_types)
+  colnames(mu)<-levels(ref@cell_types)
+  rownames(mu)<-rownames(count_matrirx)
+
+  for (k in seq(k_types)){
+    mu[, k] = rowSums(count_matrirx[, ctype==k])
+    mu[, k] = mu[, k] / sum(mu[, k])
+  }
+  mu=mu+0.000001
+
+return(mu)
+}
+
+
+iteration_EM<-function(n,Z_matrix,beta_matrix,mu_average_tpm,
+                       G_gene_number,k_types,Y_count_vector){
+    ##inital varibales
+    z_tem<-Z_matrix
+    mu_tem<-mu_average_tpm
+    betas_tem<-beta_matrix
+    Y_count<-Y_count_vector+0.0001
+  
+  for (i in seq(n)) {
+    #E step: update Z
+    z_tem = t(t(mu_tem) * c(betas_tem))
+    z_tem = z_tem / rowSums(z_tem)
+    
+    # for (j in seq(G_gene_number)){
+    #     for (k in seq(k_types)){
+    #       dot=sum(betas_tem[k]%*% mu_tem[j,])
+    #       z_tem[j,k] = (betas_tem[k] * mu_tem[j,k])/dot
+    #     }
+    # }
+    
+    #M :update beta
+    lambda=sum(Y_count %*% z_tem)
+    betas_tem = Y_count %*% z_tem / lambda
+  }
+           
+
+  return(list(z_tem, betas_tem))
+
+}
+
+## Check convergence
+#if (it > min_iter && logLik_new - logLik_old < logLik_threshold) {
+ # break
+#} else {
+#  logLik_old <- logLik_new
+#}
+
+
+
+
+
+
+
+categorical_mixture_EM <- function(reference,st_object) {
+  ##keep gene name consistent
+  intersect_gene<-intersect(rownames(reference@counts),rownames(st_object@counts))
+  ref_counts = as.matrix(reference@counts)
+  ref_counts_matched = ref_counts[intersect_gene, ]
+  Y_count_matrix= as.matrix(st_object@counts)[intersect_gene,]
+  
+  ##parameter generation
+  k_types=length(as.numeric(levels(reference@cell_types)))
+  G_gene_number=nrow(Y_count_matrix)
+  C_cell_number=ncol(Y_count_matrix)
+  df_Y <- as.data.frame(Y_count_matrix)
+  mu_average_tpm<-average_tpm_ctype(reference,ref_counts_matched)
+  
+  RT_betas = matrix(0, C_cell_number, k_types)
+  for (ic in seq(C_cell_number)) {
+    print(paste("spot", ic))
+    
+    ##inital Z and beta
+    list_inital=initial(k_types, G_gene_number, 42)
+    
+    Z_matrix<-list_inital[[1]]
+    beta_matrix<-list_inital[[2]]
+    
+    res_spot = iteration_EM(50,Z_matrix,beta_matrix,mu_average_tpm,
+                            G_gene_number,k_types,Y_count_matrix[, ic])
+    
+    RT_betas[ic, ] = res_spot[[2]]
+  }
+  
+return(RT_betas)
+}
+
+
+
+
+```
+
+```{r}
+res<-categorical_mixture_EM(ref,st_object)
+```
+
+
+```{r}
+for (i in 1:100 ){
+res<-categorical_mixture_EM(ref,st_object)
+print(res)
+}
+```
+
+```{r}
+df<-as.data.frame(res)
+df
+head(df)
+```
+
+```{r}
+dres <- as.matrix(res)
+preds_1 <- as.matrix(argmax(dres, rows=TRUE))
+print(preds_1)
+```
+
+```{r}
+library(gmodels)
+CrossTable(xxx[, 2],preds_1[idx])
+```
+
+```{r}
+cardelino::heat_matrix(data.matrix(df), show_value = TRUE)
+```
+```{r}
+x<-umap_res@cell.embeddings[,1]
+y<-umap_res@cell.embeddings[,2]
+```
+
